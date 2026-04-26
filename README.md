@@ -1,4 +1,4 @@
-# VSB Advisor Copilot
+# VSB Advisor Assistant
 
 AI-powered student outreach tool for VSB academic advisors. Integrates
 **Claude** (for segmentation + email drafting) with **HubSpot** (as the CRM
@@ -27,7 +27,7 @@ and templated emails, so the demo never dies completely.
 ## File layout
 
 ```
-vsb-advisor-copilot/
+vsb.advisor.assistant/
 ├── app.py              # the Streamlit app
 ├── hubspot_setup.py    # one-time seed script (run locally, once)
 ├── requirements.txt    # dependencies for Streamlit Cloud
@@ -47,7 +47,7 @@ vsb-advisor-copilot/
    portals this lives under **Legacy Apps** with a "Your private apps have
    moved" redirect — that's fine, follow it.
 3. Click **Create a private app**.
-4. Name it `VSB Advisor Copilot`.
+4. Name it `VSB Advisor Assistant`.
 5. On the **Scopes** tab, enable exactly these four:
    - `crm.objects.contacts.read`
    - `crm.objects.contacts.write`
@@ -72,7 +72,7 @@ opening any contact in HubSpot shows exactly what was sent and when.
 New accounts get free credits. This demo uses well under $1 of credits
 for a full class presentation.
 
-### 3. Seed HubSpot with the 24 VSB test contacts
+### 3. Seed HubSpot with the 29 VSB test contacts
 
 Clone this repo locally, then from inside the project folder:
 
@@ -84,13 +84,13 @@ python hubspot_setup.py
 
 This creates 8 custom contact properties on your HubSpot Contact object
 (`vsb_year`, `vsb_concentration`, `vsb_gpa`, `vsb_gpa_band`,
-`vsb_honors_college`, `vsb_completed_courses`, `vsb_current_grades`,
-`vsb_flags`) and inserts 24 mock VSB students.
+`vsb_transfer_student`, `vsb_completed_courses`, `vsb_current_grades`,
+`vsb_flags`) and inserts 29 mock VSB students across all four class years.
 
 Safe to re-run — existing properties are skipped, existing contacts
 (matched by email) are updated.
 
-**Verify:** open HubSpot → **Contacts**. You should see 24 new contacts.
+**Verify:** open HubSpot → **Contacts**. You should see 29 new contacts.
 Click one (e.g. Aisha Patel) → scroll to **About** → confirm the VSB
 custom properties are populated.
 
@@ -102,8 +102,13 @@ custom properties are populated.
 4. Once deploying, click the three-dots menu → **Settings** → **Secrets**, and paste:
 
     ```toml
-    ANTHROPIC_API_KEY = "sk-ant-api03-xxxxxxxx"
-    HUBSPOT_TOKEN     = "pat-na1-xxxxxxxx"
+    ANTHROPIC_API_KEY     = "sk-ant-api03-xxxxxxxx"
+    HUBSPOT_TOKEN         = "pat-na1-xxxxxxxx"
+
+    # Optional — enables real email delivery via Outlook SMTP
+    OUTLOOK_EMAIL         = "vsb.advisor.assistant@outlook.com"
+    OUTLOOK_APP_PASSWORD  = "abcd efgh ijkl mnop"
+    ADVISOR_DISPLAY_NAME  = "VSB Academic Advising"
     ```
 
 5. Wait ~60 seconds for the app to restart. You should see the advisor UI
@@ -112,23 +117,52 @@ custom properties are populated.
 Your public URL will look like `https://<your-app>.streamlit.app` — share
 that with the professor.
 
+### 5. (Optional) Enable real email delivery via Outlook
+
+By default the app logs every approved outreach to the student's HubSpot
+contact record. If you want it to *also* deliver the email for real during
+the demo, configure Outlook SMTP:
+
+1. Create a free Outlook account at https://outlook.live.com (e.g.
+   `vsb.advisor.assistant@outlook.com`). Don't use a Villanova email — VU
+   IT disables SMTP authentication on student accounts.
+2. Go to https://account.microsoft.com/security → **Advanced security
+   options** → enable **Two-step verification** (required before app
+   passwords can be generated).
+3. Same page, scroll to **App passwords** → **Create a new app password**
+   → copy the 16-character password (you only see it once).
+4. Add `OUTLOOK_EMAIL` and `OUTLOOK_APP_PASSWORD` to Streamlit secrets
+   (see step 4 above).
+5. The app's "Approve & send" button will now both log to HubSpot AND
+   send a real email via `smtp-mail.outlook.com:587`.
+
+If Outlook is not configured, the app still works — approvals just log to
+HubSpot without delivering. A yellow banner at the top tells you which
+mode you're in.
+
 ---
 
 ## Demo-day checklist
 
 - [ ] App URL loads (test morning of)
-- [ ] "HubSpot contacts: 24" is showing at the top
+- [ ] "HubSpot contacts: 29" is showing at the top
 - [ ] Click **At-risk sophomores** button — should return 6 students
   including Aisha Patel and Lucas Fernandez
-- [ ] Open one generated draft, edit a sentence, click **Approve & send**
-- [ ] Switch over to HubSpot in another tab → open that student's contact →
+- [ ] Open Aisha's draft, edit a sentence, click **Approve & send** — Aisha's
+  email is wired to your Villanova address, so the email should land in your
+  inbox within a few seconds (if Outlook send is configured)
+- [ ] Switch over to HubSpot in another tab → open Aisha's contact →
   scroll to the **About** section and show the `VSB Last Outreach Subject`,
   `VSB Last Outreach Body`, and `VSB Last Outreach Sent At` fields populated
   with exactly what you just approved in the app
-- [ ] Back in the app, click **Undeclared sophomores** — should return 6
-  students with varying academic profiles (at-risk, honors college, mid-range)
-- [ ] Type a custom query: *"undeclared honors college sophomores"* → should
-  return just Liam and Priya
+- [ ] Back in the app, click **Transfer student onboarding** — should return
+  ~5 students spanning multiple class years (Hannah/Freshman, Daniel/Sophomore,
+  Carlos/Junior) and show how the AI tailors each email to the student's
+  year and what they've completed
+- [ ] Click **Undeclared sophomores** — should return Aisha, Lucas, Alexander,
+  Ryan, Liam, Priya (six different academic profiles)
+- [ ] Type a custom query: *"freshmen who are at risk"* → should return just
+  Tyler Greene and Diego Morales
 
 Total demo time: 4–5 minutes of clicking through, plenty of narration
 breathing room for the full 7-minute presentation.

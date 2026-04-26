@@ -1,6 +1,6 @@
 """
-VSB Advisor Copilot
-===================
+VSB Advisor Assistant
+=====================
 Streamlit app that helps VSB academic advisors segment students in HubSpot
 and draft personalized outreach emails with Claude, then log approved
 emails as engagements on the contact timeline.
@@ -12,6 +12,8 @@ Secrets required (set in Streamlit Cloud -> App settings -> Secrets):
 
 import json
 import time
+import smtplib
+from email.message import EmailMessage
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,13 +25,16 @@ from anthropic import Anthropic
 # Config
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="VSB Advisor Copilot",
+    page_title="VSB Advisor Assistant",
     page_icon="🎓",
     layout="wide",
 )
 
 ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY", "")
 HUBSPOT_TOKEN = st.secrets.get("HUBSPOT_TOKEN", "")
+OUTLOOK_EMAIL = st.secrets.get("OUTLOOK_EMAIL", "")
+OUTLOOK_APP_PASSWORD = st.secrets.get("OUTLOOK_APP_PASSWORD", "")
+ADVISOR_DISPLAY_NAME = st.secrets.get("ADVISOR_DISPLAY_NAME", "VSB Academic Advising")
 
 CLAUDE_MODEL = "claude-sonnet-4-5"
 
@@ -43,7 +48,7 @@ HUBSPOT_HEADERS = {
 VSB_PROPERTIES = [
     "email", "firstname", "lastname",
     "vsb_year", "vsb_concentration", "vsb_gpa", "vsb_gpa_band",
-    "vsb_honors_college", "vsb_completed_courses",
+    "vsb_transfer_student", "vsb_completed_courses",
     "vsb_current_grades", "vsb_flags",
 ]
 
@@ -95,7 +100,7 @@ def fetch_all_vsb_contacts() -> list[dict[str, Any]]:
                 "concentration": p.get("vsb_concentration") or None,
                 "gpa": gpa,
                 "gpa_band": p.get("vsb_gpa_band", ""),
-                "honors": (p.get("vsb_honors_college") or "").lower() == "true",
+                "transfer": (p.get("vsb_transfer_student") or "").lower() == "true",
                 "completed": completed,
                 "current_grades": grades,
                 "flags": flags,
@@ -131,6 +136,39 @@ def log_outreach_to_contact(contact_id: str, subject: str, body: str) -> bool:
     return r.status_code in (200, 201)
 
 
+def send_via_outlook(to_email: str, subject: str, body: str) -> tuple[bool, str]:
+    """
+    Send the approved email via outlook.com SMTP.
+
+    Returns (ok, message). If OUTLOOK_EMAIL or OUTLOOK_APP_PASSWORD are not
+    configured, returns (False, "not configured") so the caller can fall
+    back to log-only mode without the demo dying.
+    """
+    if not OUTLOOK_EMAIL or not OUTLOOK_APP_PASSWORD:
+        return False, "Outlook send not configured"
+
+    msg = EmailMessage()
+    msg["From"] = f"{ADVISOR_DISPLAY_NAME} <{OUTLOOK_EMAIL}>"
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    try:
+        # Microsoft 365 / outlook.com personal accounts use STARTTLS on port 587
+        with smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=20) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            # outlook.com app passwords are 16 chars, can include spaces — strip them
+            server.login(OUTLOOK_EMAIL, OUTLOOK_APP_PASSWORD.replace(" ", ""))
+            server.send_message(msg)
+        return True, "sent"
+    except smtplib.SMTPAuthenticationError:
+        return False, "Outlook rejected the credentials. Re-check OUTLOOK_EMAIL and OUTLOOK_APP_PASSWORD."
+    except Exception as e:
+        return False, f"SMTP error: {e.__class__.__name__}: {e}"
+
+
 # ---------------------------------------------------------------------------
 # Claude helpers
 # ---------------------------------------------------------------------------
@@ -158,13 +196,15 @@ def claude_segment(query: str, contacts: list[dict]) -> list[str]:
         "Segmentation rules:\n"
         "- 'At-risk' = gpa below 2.7 OR any current_grades value is D+/D/D-/F.\n"
         "- 'Struggling in [course]' = that course code is a key in current_grades with a D+/D/D-/F/C-/C grade.\n"
-        "- 'Honors' / 'Honors College' = honors field is true. Do NOT infer from GPA.\n"
+        "- 'Transfer' / 'transfer student' / 'new to VSB' = transfer field is true.\n"
         "- 'Undeclared' / 'no concentration' / \"haven't declared\" = concentration is null or empty.\n"
         "- 'Missing [course]' = that course code is NOT in completed.\n"
         "- 'Senior missing capstone' = year is 'Senior' AND 'VSB 4002' not in completed.\n"
+        "- Class year filtering: 'Freshman', 'Sophomore', 'Junior', 'Senior' filter to that year exactly. "
+        "If the advisor doesn't name a year, do NOT restrict by year on your own.\n"
         "- Only filter by concentration if the advisor explicitly names one.\n"
         "- Return 3-10 matches.\n"
-        "- The advisor only sees Banner data (transcript, registration, concentration, GPA, honors). "
+        "- The advisor only sees Banner data (transcript, registration, concentration, GPA, transfer status). "
         "Never invent fields like internship status or club membership."
     )
     slim = [
@@ -174,7 +214,7 @@ def claude_segment(query: str, contacts: list[dict]) -> list[str]:
             "year": c["year"],
             "concentration": c["concentration"],
             "gpa": c["gpa"],
-            "honors": c["honors"],
+            "transfer": c["transfer"],
             "completed": c["completed"],
             "current_grades": c["current_grades"],
             "flags": c["flags"],
@@ -209,6 +249,11 @@ def claude_draft_emails(query: str, students: list[dict]) -> list[dict]:
         "- For undeclared sophomores: acknowledge the declaration deadline is approaching, "
         "suggest 2-3 concentrations that plausibly fit signals in their record (e.g., "
         "strong VSB 2006/2008 => MIS or Business Analytics), and invite a 1:1 meeting.\n"
+        "- For transfer students: acknowledge that they are new to VSB, point them to the "
+        "transfer credit validation process, mention the New Student Orientation resources, "
+        "and offer a 1:1 to map out their remaining VSB requirements based on what transferred in.\n"
+        "- For freshmen: emphasize this is their foundation year, reference Business Dynamics I/II "
+        "(VSB 1001/1002) when relevant, and orient them to the VSB advising calendar.\n"
         "- Never reference data the advisor doesn't have: internship status, clubs, careers.\n"
         "- Include ONE concrete next step.\n"
         "- Sign off exactly:\nDr. Alvarez\nVSB Academic Advising\n"
@@ -223,7 +268,7 @@ def claude_draft_emails(query: str, students: list[dict]) -> list[dict]:
             "year": s["year"],
             "concentration": s["concentration"],
             "gpa_band": s["gpa_band"],
-            "honors": s["honors"],
+            "transfer": s["transfer"],
             "completed": s["completed"],
             "current_grades": s["current_grades"],
             "flags": s["flags"],
@@ -268,8 +313,8 @@ def rule_based_segment(query: str, contacts: list[dict]) -> list[str]:
             break
     if "1003" in q or "bloomberg" in q:
         matched = [c for c in matched if "VSB 1003" not in c["completed"]]
-    if "honors college" in q or " honors" in f" {q} ":
-        matched = [c for c in matched if c["honors"]]
+    if "transfer" in q or "new to vsb" in q or "new student" in q:
+        matched = [c for c in matched if c["transfer"]]
     if "capstone" in q or "4002" in q:
         matched = [c for c in matched if c["year"] == "Senior" and "VSB 4002" not in c["completed"]]
     return [c["id"] for c in matched[:10]]
@@ -321,17 +366,18 @@ def template_email(student: dict, query: str) -> dict:
             "the requirement.\n\n"
             "Dr. Alvarez\nVSB Academic Advising"
         )
-    elif "honors" in q:
-        subject = "Honors College opportunity: Business Scholars Seminar"
+    elif "transfer" in q or "new to vsb" in q or "new student" in q:
+        subject = "Welcome to VSB — let's set up a 1:1"
         body = (
             f"Hi {first},\n\n"
-            "As a member of the Villanova Honors College at VSB, I wanted to personally reach out about "
-            "an opportunity that would be a strong fit for you: the Business Scholars Seminar (VSB 2121).\n\n"
-            "This seminar pairs Honors students with VSB faculty on applied research projects and is often "
-            "a launching pad for honors theses, conference presentations, and competitive internships. "
-            "Spots are limited and prioritize students already engaged with the Honors curriculum.\n\n"
-            "If you'd like to hear more about the application and what past Scholars have worked on, reply "
-            "with a few times and I'll send a calendar link.\n\n"
+            "Welcome to the Villanova School of Business! As your academic advisor, I wanted to reach out "
+            "now that you're settling into your first semester at VSB. Transfer students sometimes need a "
+            "little extra support as we map your transferred credits onto the VSB curriculum and figure "
+            "out which requirements you still need.\n\n"
+            "I'd like to schedule a 1:1 with you in the next two weeks so we can review your degree audit "
+            "together, talk through which VSB courses make sense for you next semester, and answer any "
+            "questions about the transfer credit validation process.\n\n"
+            "Reply with a few times that work, or use my advising calendar link.\n\n"
             "Dr. Alvarez\nVSB Academic Advising"
         )
     else:
@@ -389,7 +435,7 @@ st.markdown(
       <div class="vsb-brand">
         <div class="vsb-logo">V</div>
         <div>
-          <div style="font-weight:600;">VSB Advisor Copilot</div>
+          <div style="font-weight:600;">VSB Advisor Assistant</div>
           <div style="font-size:12px; color:#666;">AI-powered student outreach</div>
         </div>
       </div>
@@ -409,6 +455,14 @@ if missing:
         ". Add them in App settings → Secrets before using this app."
     )
     st.stop()
+
+# Outlook is optional — if not configured the app still works, just doesn't deliver.
+if not OUTLOOK_EMAIL or not OUTLOOK_APP_PASSWORD:
+    st.warning(
+        "Outlook send is not configured — approvals will log to HubSpot but no email "
+        "will actually be delivered. Add OUTLOOK_EMAIL and OUTLOOK_APP_PASSWORD in App "
+        "settings → Secrets to enable real delivery."
+    )
 
 # Session state
 if "segment" not in st.session_state: st.session_state.segment = []
@@ -446,10 +500,11 @@ QUICKSTARTS = [
      "VSB 1003 graduation requirement",
      "Find students who haven't completed Bloomberg Markets Concepts (VSB 1003) but need it for "
      "graduation. Draft reminder emails with enrollment steps."),
-    ("Honors College outreach",
-     "Honors students only",
-     "Find students enrolled in the Villanova Honors College. Draft invitation emails about the "
-     "Business Scholars Seminar (VSB 2121) and honors research opportunities."),
+    ("Transfer student onboarding",
+     "Transfer students, all years",
+     "Find all transfer students who are new to VSB. Draft welcome emails offering a "
+     "1:1 advising appointment to walk through their transferred credits, the VSB degree "
+     "audit, and which requirements they still need to complete."),
 ]
 
 qs_cols = st.columns(2)
@@ -528,7 +583,7 @@ st.markdown("### HubSpot active list")
 
 if not st.session_state.segment:
     st.info("Pick a quick-start campaign above or describe a custom segment. "
-            "The copilot will query HubSpot and return matching contacts.")
+            "The assistant will query HubSpot and return matching contacts.")
 else:
     st.caption(f"{len(st.session_state.segment)} contacts matched — data pulled from your HubSpot portal")
     for s in st.session_state.segment:
@@ -537,7 +592,7 @@ else:
             "undeclared":      ("pill-warn",    "Undeclared"),
             "missing-1003":    ("pill-warn",    "Missing VSB 1003"),
             "missing-capstone":("pill-warn",    "Missing capstone"),
-            "honors-college":  ("pill-purple",  "Honors College"),
+            "transfer-student": ("pill-purple",  "Transfer student"),
         }
         flags_html = "".join(
             f'<span class="pill {pill_map.get(f, ("pill-neutral", f))[0]}">{pill_map.get(f, ("pill-neutral", f))[1]}</span>'
@@ -582,27 +637,43 @@ if st.session_state.drafts:
             new_body = st.text_area("Body", value=d["body"], height=220, key=f"body_{i}")
 
             if d.get("sent"):
-                st.success(f"✓ Logged to HubSpot at {d.get('sent_at','')}")
+                st.success(f"✓ Logged to HubSpot at {d.get('sent_at','')}" + (f" • Email sent to {student['email']}" if d.get("email_sent") else ""))
             else:
                 col_a, col_b = st.columns([1, 5])
                 with col_a:
                     if st.button("Approve & send", key=f"send_{i}", type="primary"):
+                        # 1. Always log to HubSpot first — the audit trail is non-negotiable
                         ok = log_outreach_to_contact(student["id"], new_subject, new_body)
-                        if ok:
+                        if not ok:
+                            st.error("HubSpot rejected the update. Check Private App scopes: "
+                                     "crm.objects.contacts.read/write and "
+                                     "crm.schemas.contacts.read/write must be enabled.")
+                        else:
                             d["subject"] = new_subject
                             d["body"] = new_body
                             d["sent"] = True
                             d["sent_at"] = datetime.now().strftime("%I:%M %p")
-                            st.session_state.activity.append({
-                                "name": student["name"],
-                                "subject": new_subject,
-                                "time": d["sent_at"],
-                            })
+                            # 2. Then attempt the actual Outlook send (best-effort)
+                            sent_ok, send_msg = send_via_outlook(student["email"], new_subject, new_body)
+                            d["email_sent"] = sent_ok
+                            d["email_send_msg"] = send_msg
+                            if sent_ok:
+                                st.session_state.activity.append({
+                                    "name": student["name"],
+                                    "subject": new_subject,
+                                    "time": d["sent_at"],
+                                    "delivered": True,
+                                })
+                            else:
+                                # Logged but not delivered — show why, don't block the demo
+                                st.warning(f"Logged to HubSpot, but email not delivered: {send_msg}")
+                                st.session_state.activity.append({
+                                    "name": student["name"],
+                                    "subject": new_subject,
+                                    "time": d["sent_at"],
+                                    "delivered": False,
+                                })
                             st.rerun()
-                        else:
-                            st.error("HubSpot rejected the update. Check Private App scopes: "
-                                     "crm.objects.contacts.read/write and "
-                                     "crm.schemas.contacts.read/write must be enabled.")
                 with col_b:
                     if st.button("Discard", key=f"discard_{i}"):
                         st.session_state.drafts.pop(i)
@@ -615,8 +686,11 @@ if not st.session_state.activity:
     st.info("Approved emails appear on each contact's HubSpot timeline as an Email engagement.")
 else:
     for a in reversed(st.session_state.activity):
+        delivered = a.get("delivered", False)
+        chip_label = "Sent" if delivered else "Logged"
+        chip_style = "background:#DCFCE7;color:#166534;border:1px solid #BBF7D0;" if delivered else ""
         st.markdown(
-            f'<span class="hs-chip">Email</span> &nbsp;**{a["name"]}** — {a["subject"]} '
+            f'<span class="hs-chip" style="{chip_style}">{chip_label}</span> &nbsp;**{a["name"]}** — {a["subject"]} '
             f'<span style="color:#888; float:right;">{a["time"]}</span>',
             unsafe_allow_html=True,
         )
@@ -628,21 +702,23 @@ with st.expander("▸ Architecture note"):
         **Flow:** Advisor prompt → Claude API (segmentation reasoning) →
         HubSpot Contacts API `GET /crm/v3/objects/contacts/search` with
         custom properties (`vsb_year`, `vsb_concentration`, `vsb_gpa_band`,
-        `vsb_honors_college`, `vsb_completed_courses`, `vsb_current_grades`,
+        `vsb_transfer_student`, `vsb_completed_courses`, `vsb_current_grades`,
         `vsb_flags`) → Claude API (per-student email drafting) → Advisor
-        review & edit → HubSpot Contacts API
-        `PATCH /crm/v3/objects/contacts/{id}` writes the approved outreach
-        (subject, body, timestamp) back to the student's contact record as
-        `vsb_last_outreach_*` properties. Opening any contact in HubSpot
-        shows exactly what was sent and when.
+        review & edit → on approval, two things happen in parallel:
+        (1) HubSpot Contacts API `PATCH /crm/v3/objects/contacts/{id}` writes
+        the approved outreach back to the student's contact record as
+        `vsb_last_outreach_*` properties for the audit trail, and
+        (2) the email is delivered to the student via Outlook SMTP
+        (`smtp-mail.outlook.com:587`).
 
         All student data lives in HubSpot and originates from the student
         information system (Banner) in production. Advisors never see Career
         Services (Handshake) data. A rule-based segmentation + templated
         email fallback kicks in automatically if the Claude API is
-        unreachable, so the tool keeps working for the advisor. Production
-        would also integrate with HubSpot's Transactional Email API to
-        actually deliver the approved message — this demo focuses on the
-        CRM segmentation + personalization + logging loop.
+        unreachable, and the HubSpot write is the source of truth — if the
+        Outlook send fails, the advisor still has a logged record of what
+        was approved. Production would swap Outlook SMTP for HubSpot's
+        Transactional Email API, which adds bounce handling, open/click
+        tracking, and unsubscribe management.
         """
     )

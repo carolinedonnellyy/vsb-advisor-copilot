@@ -3,13 +3,16 @@ hubspot_setup.py
 
 ONE-TIME setup script.
 Run this locally ONCE before deploying the Streamlit app. It:
-  1. Creates the custom contact properties the advisor copilot needs
-     (vsb_year, vsb_concentration, vsb_gpa, vsb_gpa_band, vsb_honors_college,
-      vsb_completed_courses, vsb_current_grades, vsb_flags)
-  2. Seeds 24 mock VSB students as HubSpot contacts for the demo.
+  1. Creates the custom contact properties the advisor assistant needs
+     (vsb_year, vsb_concentration, vsb_gpa, vsb_gpa_band, vsb_transfer_student,
+      vsb_completed_courses, vsb_current_grades, vsb_flags, plus the three
+      vsb_last_outreach_* properties used to log approved outreach back to
+      the contact record)
+  2. Seeds 28 mock VSB students as HubSpot contacts for the demo, spanning
+     all four class years (Freshman through Senior).
 
 Usage:
-    export HUBSPOT_TOKEN="pat-na1-xxxxxxxx..."
+    export HUBSPOT_TOKEN="pat-na2-xxxxxxxx..."
     python hubspot_setup.py
 
 If a property already exists it is skipped (safe to re-run).
@@ -73,8 +76,8 @@ CUSTOM_PROPERTIES = [
         "groupName": "contactinformation",
     },
     {
-        "name": "vsb_honors_college",
-        "label": "VSB Honors College",
+        "name": "vsb_transfer_student",
+        "label": "VSB Transfer Student",
         "type": "bool",
         "fieldType": "booleancheckbox",
         "groupName": "contactinformation",
@@ -142,40 +145,51 @@ def create_property(prop):
 
 
 # ---------------------------------------------------------------------------
-# 2. Seed data — 24 mock VSB students
+# 2. Seed data — 29 mock VSB students across all four class years.
+#    The cohort intentionally spans a range of academic profiles so the
+#    advisor's segments produce a varied set of personalized emails.
 # ---------------------------------------------------------------------------
 STUDENTS = [
-    # Sophomores - at-risk
-    {"first": "Aisha",    "last": "Patel",     "email": "apatel@villanova.edu",     "year": "Sophomore", "concentration": "",             "gpa": 2.50, "honors": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005"],                         "grades": {"VSB 2004":"D+","VSB 2009":"C-"}, "flags": ["at-risk","undeclared"]},
-    {"first": "Marcus",   "last": "Chen",      "email": "mchen@villanova.edu",      "year": "Sophomore", "concentration": "Accounting",   "gpa": 2.60, "honors": False, "completed": ["VSB 1001","VSB 1002","VSB 2004"],                                     "grades": {"VSB 2014":"D"},                  "flags": ["at-risk"]},
-    {"first": "Sophia",   "last": "Ramirez",   "email": "sramirez@villanova.edu",   "year": "Sophomore", "concentration": "Marketing",    "gpa": 2.40, "honors": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005","VSB 2006"],               "grades": {"VSB 2004":"C-"},                 "flags": ["at-risk"]},
-    {"first": "Lucas",    "last": "Fernandez", "email": "lfernandez@villanova.edu", "year": "Sophomore", "concentration": "",             "gpa": 2.65, "honors": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005"],                         "grades": {"VSB 2004":"D","VSB 2005":"C"},   "flags": ["at-risk","undeclared"]},
-    {"first": "Alexander","last": "Kim",       "email": "akim@villanova.edu",       "year": "Sophomore", "concentration": "",             "gpa": 2.50, "honors": False, "completed": ["VSB 1001","VSB 1002","VSB 2004"],                                     "grades": {"VSB 2004":"D+","VSB 2009":"D"},  "flags": ["at-risk","undeclared"]},
-    {"first": "Ryan",     "last": "Sullivan",  "email": "rsullivan@villanova.edu",  "year": "Sophomore", "concentration": "",             "gpa": 2.55, "honors": False, "completed": ["VSB 1001","VSB 1002","VSB 2004"],                                     "grades": {"VSB 2004":"C-","VSB 2005":"D+"}, "flags": ["at-risk","undeclared"]},
+    # ---- Freshmen ----------------------------------------------------------
+    {"first": "Maya",     "last": "Robinson",  "email": "mrobinson@villanova.edu",  "year": "Freshman",  "concentration": "",             "gpa": 3.10, "transfer": False, "completed": ["VSB 1001"],                                                          "grades": {"VSB 1002": "B"},                 "flags": []},
+    {"first": "Tyler",    "last": "Greene",    "email": "tgreene@villanova.edu",    "year": "Freshman",  "concentration": "",             "gpa": 2.55, "transfer": False, "completed": [],                                                                    "grades": {"VSB 1001":"D+","VSB 1000":"C-"}, "flags": ["at-risk"]},
+    {"first": "Jasmine",  "last": "Carter",    "email": "jcarter@villanova.edu",    "year": "Freshman",  "concentration": "",             "gpa": 3.65, "transfer": False, "completed": ["VSB 1000"],                                                          "grades": {"VSB 1001":"A-"},                 "flags": []},
+    {"first": "Diego",    "last": "Morales",   "email": "dmorales@villanova.edu",   "year": "Freshman",  "concentration": "",             "gpa": 2.40, "transfer": False, "completed": [],                                                                    "grades": {"VSB 1001":"D","VSB 1000":"D+"},  "flags": ["at-risk"]},
+    {"first": "Hannah",   "last": "Friedman",  "email": "hfriedman@villanova.edu",  "year": "Freshman",  "concentration": "",             "gpa": 3.40, "transfer": True,  "completed": ["VSB 1000"],                                                          "grades": {"VSB 1001":"B+"},                 "flags": ["transfer-student"]},
 
-    # Sophomores - honors college
-    {"first": "Olivia",   "last": "Brennan",   "email": "obrennan@villanova.edu",   "year": "Sophomore", "concentration": "MIS",          "gpa": 3.80, "honors": True,  "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005","VSB 2006","VSB 1003"],   "grades": {},                                "flags": ["honors-college"]},
-    {"first": "Liam",     "last": "O'Connor",  "email": "loconnor@villanova.edu",   "year": "Sophomore", "concentration": "",             "gpa": 3.50, "honors": True,  "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005","VSB 1003"],              "grades": {},                                "flags": ["honors-college","undeclared"]},
-    {"first": "Ava",      "last": "Thompson",  "email": "athompson@villanova.edu",  "year": "Sophomore", "concentration": "Marketing",    "gpa": 3.30, "honors": True,  "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2006","VSB 1003"],              "grades": {},                                "flags": ["honors-college"]},
-    {"first": "Chloe",    "last": "Wright",    "email": "cwright@villanova.edu",    "year": "Sophomore", "concentration": "Accounting",   "gpa": 3.70, "honors": True,  "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2014","VSB 1003"],              "grades": {},                                "flags": ["honors-college"]},
-    {"first": "Priya",    "last": "Desai",     "email": "pdesai@villanova.edu",     "year": "Sophomore", "concentration": "",             "gpa": 3.85, "honors": True,  "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2006","VSB 2008","VSB 1003"],   "grades": {},                                "flags": ["honors-college","undeclared"]},
+    # ---- Sophomores - at-risk (Caroline's email is on Aisha for the demo) -
+    {"first": "Aisha",    "last": "Patel",     "email": "cdonne17@villanova.edu",   "year": "Sophomore", "concentration": "",             "gpa": 2.50, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005"],                         "grades": {"VSB 2004":"D+","VSB 2009":"C-"}, "flags": ["at-risk","undeclared"]},
+    {"first": "Marcus",   "last": "Chen",      "email": "mchen@villanova.edu",      "year": "Sophomore", "concentration": "Accounting",   "gpa": 2.60, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004"],                                     "grades": {"VSB 2014":"D"},                  "flags": ["at-risk"]},
+    {"first": "Sophia",   "last": "Ramirez",   "email": "sramirez@villanova.edu",   "year": "Sophomore", "concentration": "Marketing",    "gpa": 2.40, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005","VSB 2006"],               "grades": {"VSB 2004":"C-"},                 "flags": ["at-risk"]},
+    {"first": "Lucas",    "last": "Fernandez", "email": "lfernandez@villanova.edu", "year": "Sophomore", "concentration": "",             "gpa": 2.65, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005"],                         "grades": {"VSB 2004":"D","VSB 2005":"C"},   "flags": ["at-risk","undeclared"]},
+    {"first": "Alexander","last": "Kim",       "email": "akim@villanova.edu",       "year": "Sophomore", "concentration": "",             "gpa": 2.50, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004"],                                     "grades": {"VSB 2004":"D+","VSB 2009":"D"},  "flags": ["at-risk","undeclared"]},
+    {"first": "Ryan",     "last": "Sullivan",  "email": "rsullivan@villanova.edu",  "year": "Sophomore", "concentration": "",             "gpa": 2.55, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004"],                                     "grades": {"VSB 2004":"C-","VSB 2005":"D+"}, "flags": ["at-risk","undeclared"]},
 
-    # Juniors
-    {"first": "Jordan",   "last": "Williams",  "email": "jwilliams@villanova.edu",  "year": "Junior",    "concentration": "Finance",      "gpa": 3.40, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 2020","VSB 1003"],              "grades": {},                                "flags": []},
-    {"first": "Emily",    "last": "Nguyen",    "email": "enguyen@villanova.edu",    "year": "Junior",    "concentration": "Finance",      "gpa": 3.60, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 1003","VSB 3008"],              "grades": {},                                "flags": []},
-    {"first": "David",    "last": "Park",      "email": "dpark@villanova.edu",      "year": "Junior",    "concentration": "Finance",      "gpa": 3.20, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2010"],                                     "grades": {},                                "flags": ["missing-1003"]},
-    {"first": "Ethan",    "last": "Kumar",     "email": "ekumar@villanova.edu",     "year": "Junior",    "concentration": "Finance",      "gpa": 3.30, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 2020"],                         "grades": {},                                "flags": ["missing-1003"]},
-    {"first": "Grace",    "last": "Donovan",   "email": "gdonovan@villanova.edu",   "year": "Junior",    "concentration": "Marketing",    "gpa": 2.80, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2006","VSB 2020"],                         "grades": {},                                "flags": ["missing-1003"]},
-    {"first": "Benjamin", "last": "Shah",      "email": "bshah@villanova.edu",      "year": "Junior",    "concentration": "MIS",          "gpa": 3.55, "honors": False, "completed": ["VSB 2006","VSB 2008","VSB 2004","VSB 2009","VSB 1003"],              "grades": {},                                "flags": []},
-    {"first": "Mia",      "last": "Callahan",  "email": "mcallahan@villanova.edu",  "year": "Junior",    "concentration": "Finance",      "gpa": 3.40, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 1003","VSB 3008"],              "grades": {},                                "flags": []},
-    {"first": "Henry",    "last": "Walsh",     "email": "hwalsh@villanova.edu",     "year": "Junior",    "concentration": "Accounting",   "gpa": 3.25, "honors": False, "completed": ["VSB 2004","VSB 2014","VSB 2009","VSB 2020"],                         "grades": {},                                "flags": ["missing-1003"]},
-    {"first": "Natalie",  "last": "Cho",       "email": "ncho@villanova.edu",       "year": "Junior",    "concentration": "Finance",      "gpa": 3.45, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 1003"],                         "grades": {},                                "flags": []},
+    # ---- Sophomores - mid range, undeclared, and transfers ---------------
+    {"first": "Olivia",   "last": "Brennan",   "email": "obrennan@villanova.edu",   "year": "Sophomore", "concentration": "MIS",          "gpa": 3.80, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005","VSB 2006","VSB 1003"],   "grades": {},                                "flags": []},
+    {"first": "Liam",     "last": "O'Connor",  "email": "loconnor@villanova.edu",   "year": "Sophomore", "concentration": "",             "gpa": 3.50, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2005","VSB 1003"],              "grades": {},                                "flags": ["undeclared"]},
+    {"first": "Ava",      "last": "Thompson",  "email": "athompson@villanova.edu",  "year": "Sophomore", "concentration": "Marketing",    "gpa": 3.30, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2006","VSB 1003"],              "grades": {},                                "flags": []},
+    {"first": "Chloe",    "last": "Wright",    "email": "cwright@villanova.edu",    "year": "Sophomore", "concentration": "Accounting",   "gpa": 3.70, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2014","VSB 1003"],              "grades": {},                                "flags": []},
+    {"first": "Priya",    "last": "Desai",     "email": "pdesai@villanova.edu",     "year": "Sophomore", "concentration": "",             "gpa": 3.85, "transfer": False, "completed": ["VSB 1001","VSB 1002","VSB 2004","VSB 2006","VSB 2008","VSB 1003"],   "grades": {},                                "flags": ["undeclared"]},
+    {"first": "Daniel",   "last": "Petrov",    "email": "dpetrov@villanova.edu",    "year": "Sophomore", "concentration": "",             "gpa": 3.20, "transfer": True,  "completed": ["VSB 1001","VSB 2004"],                                                "grades": {"VSB 2005":"B"},                  "flags": ["transfer-student","undeclared"]},
 
-    # Seniors
-    {"first": "Noah",     "last": "Bennett",   "email": "nbennett@villanova.edu",   "year": "Senior",    "concentration": "Management",   "gpa": 3.10, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 2020","VSB 3008","VSB 1003"],   "grades": {},                                "flags": ["missing-capstone"]},
-    {"first": "Isabella", "last": "Rossi",     "email": "irossi@villanova.edu",     "year": "Senior",    "concentration": "Accounting",   "gpa": 3.50, "honors": False, "completed": ["VSB 2004","VSB 2014","VSB 2010","VSB 2020","VSB 1003","VSB 3008"],   "grades": {},                                "flags": ["missing-capstone"]},
-    {"first": "Zoe",      "last": "Martinez",  "email": "zmartinez@villanova.edu",  "year": "Senior",    "concentration": "Marketing",    "gpa": 3.40, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2006","VSB 2020","VSB 1003","VSB 3008"],   "grades": {},                                "flags": ["missing-capstone"]},
-    {"first": "Jason",    "last": "Pierce",    "email": "jpierce@villanova.edu",    "year": "Senior",    "concentration": "Finance",      "gpa": 3.60, "honors": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 2020","VSB 1003","VSB 3008"],   "grades": {},                                "flags": ["missing-capstone"]},
+    # ---- Juniors -----------------------------------------------------------
+    {"first": "Jordan",   "last": "Williams",  "email": "jwilliams@villanova.edu",  "year": "Junior",    "concentration": "Finance",      "gpa": 3.40, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 2020","VSB 1003"],              "grades": {},                                "flags": []},
+    {"first": "Emily",    "last": "Nguyen",    "email": "enguyen@villanova.edu",    "year": "Junior",    "concentration": "Finance",      "gpa": 3.60, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 1003","VSB 3008"],              "grades": {},                                "flags": []},
+    {"first": "David",    "last": "Park",      "email": "dpark@villanova.edu",      "year": "Junior",    "concentration": "Finance",      "gpa": 3.20, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2010"],                                     "grades": {},                                "flags": ["missing-1003"]},
+    {"first": "Ethan",    "last": "Kumar",     "email": "ekumar@villanova.edu",     "year": "Junior",    "concentration": "Finance",      "gpa": 3.30, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 2020"],                         "grades": {},                                "flags": ["missing-1003"]},
+    {"first": "Grace",    "last": "Donovan",   "email": "gdonovan@villanova.edu",   "year": "Junior",    "concentration": "Marketing",    "gpa": 2.80, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2006","VSB 2020"],                         "grades": {},                                "flags": ["missing-1003"]},
+    {"first": "Benjamin", "last": "Shah",      "email": "bshah@villanova.edu",      "year": "Junior",    "concentration": "MIS",          "gpa": 3.55, "transfer": False, "completed": ["VSB 2006","VSB 2008","VSB 2004","VSB 2009","VSB 1003"],              "grades": {},                                "flags": []},
+    {"first": "Mia",      "last": "Callahan",  "email": "mcallahan@villanova.edu",  "year": "Junior",    "concentration": "Finance",      "gpa": 3.40, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 1003","VSB 3008"],              "grades": {},                                "flags": []},
+    {"first": "Henry",    "last": "Walsh",     "email": "hwalsh@villanova.edu",     "year": "Junior",    "concentration": "Accounting",   "gpa": 3.25, "transfer": False, "completed": ["VSB 2004","VSB 2014","VSB 2009","VSB 2020"],                         "grades": {},                                "flags": ["missing-1003"]},
+    {"first": "Natalie",  "last": "Cho",       "email": "ncho@villanova.edu",       "year": "Junior",    "concentration": "Finance",      "gpa": 3.45, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 1003"],                         "grades": {},                                "flags": []},
+    {"first": "Carlos",   "last": "Ortega",    "email": "cortega@villanova.edu",    "year": "Junior",    "concentration": "Management",   "gpa": 3.10, "transfer": True,  "completed": ["VSB 2004","VSB 2009","VSB 2010"],                                     "grades": {"VSB 2020":"C+"},                 "flags": ["transfer-student","missing-1003"]},
+
+    # ---- Seniors -----------------------------------------------------------
+    {"first": "Noah",     "last": "Bennett",   "email": "nbennett@villanova.edu",   "year": "Senior",    "concentration": "Management",   "gpa": 3.10, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 2020","VSB 3008","VSB 1003"],   "grades": {},                                "flags": ["missing-capstone"]},
+    {"first": "Isabella", "last": "Rossi",     "email": "irossi@villanova.edu",     "year": "Senior",    "concentration": "Accounting",   "gpa": 3.50, "transfer": False, "completed": ["VSB 2004","VSB 2014","VSB 2010","VSB 2020","VSB 1003","VSB 3008"],   "grades": {},                                "flags": ["missing-capstone"]},
+    {"first": "Zoe",      "last": "Martinez",  "email": "zmartinez@villanova.edu",  "year": "Senior",    "concentration": "Marketing",    "gpa": 3.40, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2006","VSB 2020","VSB 1003","VSB 3008"],   "grades": {},                                "flags": ["missing-capstone"]},
+    {"first": "Jason",    "last": "Pierce",    "email": "jpierce@villanova.edu",    "year": "Senior",    "concentration": "Finance",      "gpa": 3.60, "transfer": False, "completed": ["VSB 2004","VSB 2009","VSB 2010","VSB 2020","VSB 1003","VSB 3008"],   "grades": {},                                "flags": ["missing-capstone"]},
 ]
 
 
@@ -196,7 +210,7 @@ def upsert_contact(s: dict):
         "vsb_concentration": s["concentration"],
         "vsb_gpa": str(s["gpa"]),
         "vsb_gpa_band": gpa_band(s["gpa"]),
-        "vsb_honors_college": "true" if s["honors"] else "false",
+        "vsb_transfer_student": "true" if s["transfer"] else "false",
         "vsb_completed_courses": ",".join(s["completed"]),
         "vsb_current_grades": json.dumps(s["grades"]),
         "vsb_flags": ",".join(s["flags"]),
@@ -233,7 +247,7 @@ def upsert_contact(s: dict):
 
 def main():
     print("=" * 60)
-    print("VSB Advisor Copilot — HubSpot setup")
+    print("VSB Advisor Assistant — HubSpot setup")
     print("=" * 60)
 
     print("\nStep 1/2  Creating custom properties on the Contact object...")
@@ -241,7 +255,7 @@ def main():
         create_property(prop)
         time.sleep(0.2)  # polite throttle
 
-    print("\nStep 2/2  Seeding 24 VSB test contacts...")
+    print("\nStep 2/2  Seeding VSB test contacts...")
     for s in STUDENTS:
         upsert_contact(s)
         time.sleep(0.2)

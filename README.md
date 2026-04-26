@@ -105,10 +105,11 @@ custom properties are populated.
     ANTHROPIC_API_KEY     = "sk-ant-api03-xxxxxxxx"
     HUBSPOT_TOKEN         = "pat-na1-xxxxxxxx"
 
-    # Optional — enables real email delivery via Outlook SMTP
-    OUTLOOK_EMAIL         = "vsb.advisor.assistant@outlook.com"
-    OUTLOOK_APP_PASSWORD  = "abcd efgh ijkl mnop"
+    # Optional — enables real email delivery
+    SMTP_EMAIL            = "vsb.advisor.assistant@gmail.com"
+    SMTP_APP_PASSWORD     = "abcd efgh ijkl mnop"
     ADVISOR_DISPLAY_NAME  = "VSB Academic Advising"
+    # SMTP_HOST defaults to smtp.gmail.com — override only if using a different provider
     ```
 
 5. Wait ~60 seconds for the app to restart. You should see the advisor UI
@@ -117,26 +118,29 @@ custom properties are populated.
 Your public URL will look like `https://<your-app>.streamlit.app` — share
 that with the professor.
 
-### 5. (Optional) Enable real email delivery via Outlook
+### 5. (Optional) Enable real email delivery via Gmail
 
 By default the app logs every approved outreach to the student's HubSpot
 contact record. If you want it to *also* deliver the email for real during
-the demo, configure Outlook SMTP:
+the demo, configure Gmail SMTP. We recommend Gmail over Outlook because
+Microsoft has disabled basic SMTP authentication on personal outlook.com
+accounts (5.7.139 SmtpClientAuthentication is disabled), so app passwords
+no longer work for sending from outlook.com.
 
-1. Create a free Outlook account at https://outlook.live.com (e.g.
-   `vsb.advisor.assistant@outlook.com`). Don't use a Villanova email — VU
-   IT disables SMTP authentication on student accounts.
-2. Go to https://account.microsoft.com/security → **Advanced security
-   options** → enable **Two-step verification** (required before app
-   passwords can be generated).
-3. Same page, scroll to **App passwords** → **Create a new app password**
-   → copy the 16-character password (you only see it once).
-4. Add `OUTLOOK_EMAIL` and `OUTLOOK_APP_PASSWORD` to Streamlit secrets
+1. Create a free Gmail account at https://accounts.google.com/signup
+   (e.g. `vsb.advisor.assistant@gmail.com`). Don't use a Villanova email —
+   VU IT disables SMTP on student accounts.
+2. Go to https://myaccount.google.com/security → enable **2-Step
+   Verification** (required before app passwords can be generated).
+3. Go to https://myaccount.google.com/apppasswords → enter an app name
+   like `VSB Advisor Assistant` → click **Create** → copy the
+   16-character password (you only see it once).
+4. Add `SMTP_EMAIL` and `SMTP_APP_PASSWORD` to Streamlit secrets
    (see step 4 above).
 5. The app's "Approve & send" button will now both log to HubSpot AND
-   send a real email via `smtp-mail.outlook.com:587`.
+   send a real email via `smtp.gmail.com:587`.
 
-If Outlook is not configured, the app still works — approvals just log to
+If SMTP is not configured, the app still works — approvals just log to
 HubSpot without delivering. A yellow banner at the top tells you which
 mode you're in.
 
@@ -150,7 +154,7 @@ mode you're in.
   including Aisha Patel and Lucas Fernandez
 - [ ] Open Aisha's draft, edit a sentence, click **Approve & send** — Aisha's
   email is wired to your Villanova address, so the email should land in your
-  inbox within a few seconds (if Outlook send is configured)
+  inbox within a few seconds (if SMTP is configured)
 - [ ] Switch over to HubSpot in another tab → open Aisha's contact →
   scroll to the **About** section and show the `VSB Last Outreach Subject`,
   `VSB Last Outreach Body`, and `VSB Last Outreach Sent At` fields populated

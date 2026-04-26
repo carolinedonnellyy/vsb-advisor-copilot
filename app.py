@@ -32,8 +32,10 @@ st.set_page_config(
 
 ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY", "")
 HUBSPOT_TOKEN = st.secrets.get("HUBSPOT_TOKEN", "")
-OUTLOOK_EMAIL = st.secrets.get("OUTLOOK_EMAIL", "")
-OUTLOOK_APP_PASSWORD = st.secrets.get("OUTLOOK_APP_PASSWORD", "")
+SMTP_EMAIL = st.secrets.get("SMTP_EMAIL", "")
+SMTP_APP_PASSWORD = st.secrets.get("SMTP_APP_PASSWORD", "")
+SMTP_HOST = st.secrets.get("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(st.secrets.get("SMTP_PORT", 587))
 ADVISOR_DISPLAY_NAME = st.secrets.get("ADVISOR_DISPLAY_NAME", "VSB Academic Advising")
 
 CLAUDE_MODEL = "claude-sonnet-4-5"
@@ -136,35 +138,36 @@ def log_outreach_to_contact(contact_id: str, subject: str, body: str) -> bool:
     return r.status_code in (200, 201)
 
 
-def send_via_outlook(to_email: str, subject: str, body: str) -> tuple[bool, str]:
+def send_via_smtp(to_email: str, subject: str, body: str) -> tuple[bool, str]:
     """
-    Send the approved email via outlook.com SMTP.
+    Send the approved email via SMTP. Defaults to Gmail; the SMTP host is
+    configurable via the SMTP_HOST secret so the same code works for any
+    provider that supports app-password SMTP.
 
-    Returns (ok, message). If OUTLOOK_EMAIL or OUTLOOK_APP_PASSWORD are not
+    Returns (ok, message). If SMTP_EMAIL or SMTP_APP_PASSWORD are not
     configured, returns (False, "not configured") so the caller can fall
     back to log-only mode without the demo dying.
     """
-    if not OUTLOOK_EMAIL or not OUTLOOK_APP_PASSWORD:
-        return False, "Outlook send not configured"
+    if not SMTP_EMAIL or not SMTP_APP_PASSWORD:
+        return False, "SMTP send not configured"
 
     msg = EmailMessage()
-    msg["From"] = f"{ADVISOR_DISPLAY_NAME} <{OUTLOOK_EMAIL}>"
+    msg["From"] = f"{ADVISOR_DISPLAY_NAME} <{SMTP_EMAIL}>"
     msg["To"] = to_email
     msg["Subject"] = subject
     msg.set_content(body)
 
     try:
-        # Microsoft 365 / outlook.com personal accounts use STARTTLS on port 587
-        with smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=20) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
             server.ehlo()
             server.starttls()
             server.ehlo()
-            # outlook.com app passwords are 16 chars, can include spaces — strip them
-            server.login(OUTLOOK_EMAIL, OUTLOOK_APP_PASSWORD.replace(" ", ""))
+            # App passwords are 16 chars and may include spaces — strip them
+            server.login(SMTP_EMAIL, SMTP_APP_PASSWORD.replace(" ", ""))
             server.send_message(msg)
         return True, "sent"
     except smtplib.SMTPAuthenticationError:
-        return False, "Outlook rejected the credentials. Re-check OUTLOOK_EMAIL and OUTLOOK_APP_PASSWORD."
+        return False, "SMTP rejected the credentials. Re-check SMTP_EMAIL and SMTP_APP_PASSWORD."
     except Exception as e:
         return False, f"SMTP error: {e.__class__.__name__}: {e}"
 
@@ -456,11 +459,11 @@ if missing:
     )
     st.stop()
 
-# Outlook is optional — if not configured the app still works, just doesn't deliver.
-if not OUTLOOK_EMAIL or not OUTLOOK_APP_PASSWORD:
+# SMTP is optional — if not configured the app still works, just doesn't deliver.
+if not SMTP_EMAIL or not SMTP_APP_PASSWORD:
     st.warning(
-        "Outlook send is not configured — approvals will log to HubSpot but no email "
-        "will actually be delivered. Add OUTLOOK_EMAIL and OUTLOOK_APP_PASSWORD in App "
+        "Email send is not configured — approvals will log to HubSpot but no email "
+        "will actually be delivered. Add SMTP_EMAIL and SMTP_APP_PASSWORD in App "
         "settings → Secrets to enable real delivery."
     )
 
@@ -654,7 +657,7 @@ if st.session_state.drafts:
                             d["sent"] = True
                             d["sent_at"] = datetime.now().strftime("%I:%M %p")
                             # 2. Then attempt the actual Outlook send (best-effort)
-                            sent_ok, send_msg = send_via_outlook(student["email"], new_subject, new_body)
+                            sent_ok, send_msg = send_via_smtp(student["email"], new_subject, new_body)
                             d["email_sent"] = sent_ok
                             d["email_send_msg"] = send_msg
                             if sent_ok:
@@ -708,8 +711,8 @@ with st.expander("▸ Architecture note"):
         (1) HubSpot Contacts API `PATCH /crm/v3/objects/contacts/{id}` writes
         the approved outreach back to the student's contact record as
         `vsb_last_outreach_*` properties for the audit trail, and
-        (2) the email is delivered to the student via Outlook SMTP
-        (`smtp-mail.outlook.com:587`).
+        (2) the email is delivered to the student via SMTP
+        (defaults to `smtp.gmail.com:587`, configurable via the `SMTP_HOST` secret).
 
         All student data lives in HubSpot and originates from the student
         information system (Banner) in production. Advisors never see Career
@@ -717,7 +720,7 @@ with st.expander("▸ Architecture note"):
         email fallback kicks in automatically if the Claude API is
         unreachable, and the HubSpot write is the source of truth — if the
         Outlook send fails, the advisor still has a logged record of what
-        was approved. Production would swap Outlook SMTP for HubSpot's
+        was approved. Production would swap the SMTP send for HubSpot's
         Transactional Email API, which adds bounce handling, open/click
         tracking, and unsubscribe management.
         """
